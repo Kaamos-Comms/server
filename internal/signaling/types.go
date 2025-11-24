@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/pion/webrtc/v4"
 )
 
 const (
@@ -36,21 +37,24 @@ type ParticipantKeys struct {
 }
 
 type Participant struct {
-	ID       string                 `json:"id"`
-	Conn     WebSocketConnInterface `json:"-"`
-	Role     ParticipantRole        `json:"role"`
-	Status   ParticipantStatus      `json:"status"`
-	Name     string                 `json:"name,omitempty"`
-	Keys     ParticipantKeys        `json:"keys,omitempty"` // ← НОВОЕ ПОЛЕ
-	JoinedAt time.Time              `json:"joined_at"`
+	ID       string                        `json:"id"`
+	Conn     WebSocketConnInterface        `json:"-"`
+	Role     ParticipantRole               `json:"role"`
+	Status   ParticipantStatus             `json:"status"`
+	Name     string                        `json:"name,omitempty"`
+	Keys     ParticipantKeys               `json:"keys,omitempty"`
+	JoinedAt time.Time                     `json:"joined_at"`
+	PC       *webrtc.PeerConnection        `json:"-"`
+	Tracks   []*webrtc.TrackLocalStaticRTP `json:"-"`
 }
 
 type Room struct {
-	Slug       string                  `json:"slug"`
-	Host       *Participant            `json:"host,omitempty"`
-	Guests     map[string]*Participant `json:"guests"`
-	PublicKeys map[string]string       `json:"public_keys"` // ← НОВОЕ ПОЛЕ
-	CreatedAt  time.Time               `json:"created_at"`
+	Slug       string                        `json:"slug"`
+	Host       *Participant                  `json:"host,omitempty"`
+	Guests     map[string]*Participant       `json:"guests"`
+	PublicKeys map[string]string             `json:"public_keys"`
+	Tracks     []*webrtc.TrackLocalStaticRTP `json:"-"`
+	CreatedAt  time.Time                     `json:"created_at"`
 	mutex      sync.RWMutex
 }
 
@@ -94,7 +98,7 @@ type Message struct {
 	Type      MessageType `json:"type"`
 	From      string      `json:"from,omitempty"`
 	To        string      `json:"to,omitempty"`
-	Slug      string      `json:"slug,omitempty"`
+	RoomID    string      `json:"room_id,omitempty"`
 	Data      interface{} `json:"data,omitempty"`
 	Timestamp time.Time   `json:"timestamp"`
 }

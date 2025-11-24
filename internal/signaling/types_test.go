@@ -65,7 +65,7 @@ func TestMessage(t *testing.T) {
 		Type:      MessageTypeJoin,
 		From:      "user1",
 		To:        "user2",
-		Slug:      "room123",
+		RoomID:    "test-room-123",
 		Data:      "test data",
 		Timestamp: time.Now(),
 	}
@@ -73,7 +73,7 @@ func TestMessage(t *testing.T) {
 	assert.Equal(t, MessageTypeJoin, message.Type)
 	assert.Equal(t, "user1", message.From)
 	assert.Equal(t, "user2", message.To)
-	assert.Equal(t, "room123", message.Slug)
+	assert.Equal(t, "test-room-123", message.RoomID)
 	assert.Equal(t, "test data", message.Data)
 	assert.WithinDuration(t, time.Now(), message.Timestamp, time.Second)
 }

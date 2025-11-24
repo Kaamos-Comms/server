@@ -3,6 +3,8 @@ package signaling
 import (
 	"log"
 	"time"
+
+	"github.com/pion/webrtc/v4"
 )
 
 func (s *Server) handleMessage(slug string, participant *Participant, message *Message) {
@@ -117,7 +119,7 @@ func (s *Server) handleAllow(room *Room, participant *Participant, message *Mess
 		Type:      MessageTypeAllow,
 		From:      participant.ID,
 		To:        guestID,
-		Slug:      room.Slug,
+		RoomID:    room.Slug,
 		Timestamp: time.Now(),
 	}
 	room.BroadcastToGuest(guestID, allowMessage)
@@ -125,7 +127,7 @@ func (s *Server) handleAllow(room *Room, participant *Participant, message *Mess
 	// Notify all participants about the updated participant list
 	participantsMessage := &Message{
 		Type:      MessageTypeParticipants,
-		Slug:      room.Slug,
+		RoomID:    room.Slug,
 		Data:      room.GetParticipantsData(),
 		Timestamp: time.Now(),
 	}
@@ -153,7 +155,7 @@ func (s *Server) handleDeny(room *Room, participant *Participant, message *Messa
 		Type:      MessageTypeDeny,
 		From:      participant.ID,
 		To:        guestID,
-		Slug:      room.Slug,
+		RoomID:    room.Slug,
 		Timestamp: time.Now(),
 	}
 	room.BroadcastToGuest(guestID, denyMessage)
@@ -164,24 +166,70 @@ func (s *Server) handleDeny(room *Room, participant *Participant, message *Messa
 }
 
 func (s *Server) handleWebRTCMessage(room *Room, participant *Participant, message *Message) {
-	// Only participants with "in_room" status can exchange WebRTC signals
-	if participant.Status != StatusInRoom {
+	if participant.PC == nil {
 		return
 	}
 
-	// If a recipient is specified, send only to them
-	if message.To != "" {
-		targetParticipant := room.GetParticipant(message.To)
-		if targetParticipant != nil && targetParticipant.Status == StatusInRoom {
-			if targetParticipant.Role == RoleHost {
-				room.BroadcastToHost(message)
-			} else {
-				room.BroadcastToGuest(message.To, message)
-			}
+	data, ok := message.Data.(map[string]interface{})
+	if !ok {
+		log.Printf("Invalid data for WebRTC message")
+		return
+	}
+
+	switch message.Type {
+	case MessageTypeOffer:
+		sdpStr, _ := data["sdp"].(string)
+		if err := participant.PC.SetRemoteDescription(webrtc.SessionDescription{
+			Type: webrtc.SDPTypeOffer,
+			SDP:  sdpStr,
+		}); err != nil {
+			log.Printf("Failed to set remote description: %v", err)
+			return
 		}
-		return
-	}
 
-	// Otherwise, broadcast to all other participants in the room
-	room.BroadcastToAll(message, participant.ID)
+		answer, err := participant.PC.CreateAnswer(nil)
+		if err != nil {
+			log.Printf("Failed to create answer: %v", err)
+			return
+		}
+
+		if err := participant.PC.SetLocalDescription(answer); err != nil {
+			log.Printf("Failed to set local description: %v", err)
+			return
+		}
+
+		participant.Conn.WriteJSON(&Message{
+			Type:      MessageTypeAnswer,
+			RoomID:    room.Slug,
+			Data:      map[string]interface{}{"sdp": answer.SDP, "type": answer.Type.String()},
+			Timestamp: time.Now(),
+		})
+
+	case MessageTypeAnswer:
+		sdpStr, _ := data["sdp"].(string)
+		if err := participant.PC.SetRemoteDescription(webrtc.SessionDescription{
+			Type: webrtc.SDPTypeAnswer,
+			SDP:  sdpStr,
+		}); err != nil {
+			log.Printf("Failed to set remote description (answer): %v", err)
+		}
+
+	case MessageTypeICECandidate:
+		candidateStr, _ := data["candidate"].(string)
+		sdpMid, _ := data["sdpMid"].(string)
+		sdpMLineIndex, _ := data["sdpMLineIndex"].(float64)
+
+		// Convert float64 to uint16 safely
+		lineIndex := uint16(sdpMLineIndex)
+
+		candidate := webrtc.ICECandidateInit{
+			Candidate:     candidateStr,
+			SDPMid:        &sdpMid,
+			SDPMLineIndex: &lineIndex,
+		}
+
+		if err := participant.PC.AddICECandidate(candidate); err != nil {
+			log.Printf("Failed to add ICE candidate: %v", err)
+		}
+	}
 }

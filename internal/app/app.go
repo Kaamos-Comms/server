@@ -40,34 +40,27 @@ func Initialize() *App {
 	// 🟢 No rate limiting
 	app.e.GET("/health", healthHandler)
 
-	// 🟡 10 req/min
-	lightLimiter := middleware.NewIPRateLimiter(rate.Every(time.Minute/10), 2)
-	lightProtected := app.e.Group("")
-	lightProtected.Use(lightLimiter.Middleware())
-	lightProtected.GET("/rooms/:slug/guest-token", guestTokenHandler)
-	lightProtected.GET("/rooms/:slug/stats", func(c echo.Context) error {
-		slug := c.Param("slug")
-		stats := app.signalingServer.GetRoomStats(slug)
-		if stats == nil {
-			return c.JSON(http.StatusNotFound, map[string]string{"error": "room not found"})
-		}
-		return c.JSON(http.StatusOK, stats)
-	})
-
-	lightProtected.GET("/rooms/:slug/guest-token", guestTokenHandler)
-	lightProtected.GET("/rooms/:slug/keys", func(c echo.Context) error {
-		return roomKeysHandler(c, app.signalingServer)
-	})
-
 	// 🔴 5 req/min
 	strictLimiter := middleware.NewIPRateLimiter(rate.Every(time.Minute/5), 1)
 	strictProtected := app.e.Group("")
 	strictProtected.Use(strictLimiter.Middleware())
-	strictProtected.POST("/rooms/anonymous", roomsAnonymousHandler)
+	strictProtected.POST("/api/rooms/create", func(c echo.Context) error {
+		// TODO: Implement room creation handler
+		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+	})
+
+	// 🟡 10 req/min
+	lightLimiter := middleware.NewIPRateLimiter(rate.Every(time.Minute/10), 2)
+	lightProtected := app.e.Group("")
+	lightProtected.Use(lightLimiter.Middleware())
+	lightProtected.GET("/api/rooms/:room_id", func(c echo.Context) error {
+		// TODO: Implement room info handler
+		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+	})
 
 	// 🔴 3 req/min
 	wsLimiter := middleware.NewIPRateLimiter(rate.Every(time.Minute/3), 1)
-	app.e.GET("/ws", wsLimiter.Middleware()(echo.WrapHandler(http.HandlerFunc(app.signalingServer.HandleWebSocket))))
+	app.e.GET("/ws/:room_id", wsLimiter.Middleware()(echo.WrapHandler(http.HandlerFunc(app.signalingServer.HandleWebSocket))))
 
 	return app
 }
